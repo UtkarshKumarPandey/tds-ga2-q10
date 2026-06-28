@@ -28,31 +28,31 @@ buckets = {}
 
 @app.middleware("http")
 async def middleware(request: Request, call_next):
-    client = request.headers.get("X-Client-Id", "default")
-
-    now = time.time()
-
-    hits = buckets.get(client, [])
-    hits = [t for t in hits if now - t < WINDOW]
-
-    if len(hits) >= RATE_LIMIT:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Rate limit exceeded"},
-        )
-
-    hits.append(now)
-    buckets[client] = hits
-
     request_id = request.headers.get("X-Request-ID")
-
     if not request_id:
         request_id = str(uuid.uuid4())
 
     request.state.request_id = request_id
 
-    response = await call_next(request)
+    if request.method != "OPTIONS":
+        client = request.headers.get("X-Client-Id", "default")
 
+        now = time.time()
+
+        hits = buckets.get(client, [])
+        hits = [t for t in hits if now - t < WINDOW]
+
+        if len(hits) >= RATE_LIMIT:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+                headers={"X-Request-ID": request_id},
+            )
+
+        hits.append(now)
+        buckets[client] = hits
+
+    response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
 
     return response
